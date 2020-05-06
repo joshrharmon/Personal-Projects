@@ -4,7 +4,7 @@ A simple script to continuously delete specific files in a Linux filesystem.
 
 ## How it works
 A flow chart of the process:
-<img src="https://github.com/joshrharmon/Projects/blob/master/Bash/BatchDelete/flowchart.png" width="1000">
+<img src="https://github.com/joshrharmon/Personal-Projects/blob/master/Bash/BatchDelete/flowchart.png" width="1000">
 ## Features
 * Numerous safeguards to prevent accidental deletion
 * Validates path and file existence before deletion
