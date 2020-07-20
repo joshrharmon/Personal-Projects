@@ -2,7 +2,7 @@
 #define WIN_MANAGE_H
 
 typedef struct WIN_STRUCT {
-  int rows, cols, topx, topy;
+    int rows, cols, topx, topy;
 } win;
 
 /* Function to quickly create windows and put a box around it */
@@ -11,6 +11,7 @@ WINDOW* initWin(int length, int width, int y, int x);
 /* Print utility functions */
 void printStatus(WINDOW *win, char *query, char *path, char *status);
 void printPrompt(WINDOW *win, char *prompt);
+void winclear(WINDOW *win);
 
 /* Function to check for valid input */
 int inputHandler(const char *input, int type);
