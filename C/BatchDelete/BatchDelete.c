@@ -17,11 +17,11 @@
 
 struct searchStruct {
 	int initSize, currSize;
-	char **results, **resultsExt, *query, *path;
+	char **results, **resultsExt, *query;
 };
 
 /* Variables used for field input and other diagnostic displays */
-char *path, *query, *status, prompt[100], input[75], filename[30], buffer[1024];
+char *path, *query, *status, *prompt, input[75], filename[30], buffer[1024];
 
 /* Function used to check if path is valid */
 int validPath(const char *path);
@@ -34,6 +34,12 @@ void fileSearch(struct searchStruct* search, char *path);
 
 /* Function to list results of search in inner_res_win */
 void listResults(struct searchStruct* search, WINDOW *res);
+
+/* Function for use with strdup that handles errors */
+void memdup(char **target, char *text, char *type);
+
+/* Function responsible for checking if a click is within the bounds of a button */
+int buttonPressed(int xpress, int ypress, int xbutton, int ybuttonmin, int ybuttonmax);
 
 int main(int argc, char *argv[]) {
 	/* Init search struct */
@@ -50,22 +56,39 @@ int main(int argc, char *argv[]) {
         printf("Usage: ./BatchDelete [Path to search]\n");
         exit(1);
     }
-
+	
     /* Copy input supplied as the path */
-	asprintf(&path, argv[1]);
+	memdup(&path, argv[1], "path");
+	
+	/* Verify path is valid before proceeding */
+    if(!validPath(path)) {
+        printf("Path '%s' invalid, exiting...\n", path);
+        free(path);
+		exit(1);
+	}
+	
+	/* If there is no trailing slash at the end of path, add it. */
+	int pathLen = strlen(path);
+	if(path[pathLen - 1] != '/') {
+		if(path != NULL) {
+			free(path);
+			path = NULL;
+		}
+		if((asprintf(&path, "%s/", argv[1]) == -1)) {
+			perror("Memory allocation of path/ failed. Exiting...");
+			exit(-1);
+		}
+		printf("%s\n", path);
+	}
 	
 	/* Initialize struct */
 	search->initSize = 20;
 	search->currSize = 0;
 	search->results = (char**)malloc(sizeof(char*) * search->initSize);
 	search->resultsExt = NULL;
-	search->path = strdup(path);
-
-    /* Verify path is valid before proceeding */
-    if(!validPath(path)) {
-        printf("Path '%s' invalid, exiting...\n", path);
-        exit(1);
-    }
+	for(int i = 0; i < search->initSize; i++) {
+		search->results[i] = NULL;
+	}
 
     /* Load history file */
     snprintf(filename, sizeof filename, "history.txt");
@@ -81,8 +104,8 @@ int main(int argc, char *argv[]) {
     }
 
     /* Load initial prompt and status   */
-    strcpy(prompt, "Type in a search query");
-    asprintf(&status, "Awaiting query...");
+	memdup(&prompt, "Type in a search query", "prompt");
+	memdup(&status, "Awaiting query...", "status");
 
     /* Start ncurses session */
     initscr();
@@ -136,14 +159,41 @@ int main(int argc, char *argv[]) {
 	mvwprintw(status_win, 0, 2, "[ Status ]");
 	mvwprintw(hist_win, 0, 2, "[ History ]");
 	mvwprintw(res_win, 0, 2, "[ Results ]");
-	printPrompt(query_win, prompt);
 	
 	wattroff(query_win, A_BOLD | COLOR_PAIR(3));
+	printPrompt(query_win, prompt);
+	
 	wattroff(res_win, A_BOLD | COLOR_PAIR(3));
 	wattroff(hist_win, A_BOLD | COLOR_PAIR(3));
 	wattroff(status_win, A_BOLD | COLOR_PAIR(3));
     printStatus(status_win, query, path, status);
-
+	
+	/* Print buttons */
+	char *deleteButton = NULL;
+	char *cancelButton = NULL;
+	char *clearButton = NULL;
+	char *selectAllButton = NULL;
+	char *deselectAllButton = NULL;
+	memdup(&deleteButton, "[ Delete ]", "delete button");
+	memdup(&cancelButton, "[ Cancel ]", "cancel button");
+	memdup(&clearButton, "[ Clear ]", "clear button");
+	memdup(&selectAllButton, "[ Select All ]", "select all button");
+	memdup(&deselectAllButton, "[ Deselect All ]", "deselect all button");
+	int deleteLen = strlen(deleteButton);
+	int cancelLen = strlen(cancelButton);
+	int clearLen = strlen(clearButton);
+	int selectLen = strlen(selectAllButton);
+	int deselectLen = strlen(deselectAllButton);
+	wattron(res_win, A_BOLD | COLOR_PAIR(2));
+	wattron(hist_win, A_BOLD | COLOR_PAIR(2));
+	mvwprintw(res_win, 0, ((maxX/2 - 2) - deleteLen), deleteButton);
+	mvwprintw(res_win, 0, ((maxX/2 - 2) - deleteLen - cancelLen), cancelButton);
+	mvwprintw(res_win, 0, ((maxX/2 - 2) - deleteLen - cancelLen - selectLen), selectAllButton);
+	mvwprintw(res_win, 0, ((maxX/2 - 2) - deleteLen - cancelLen - selectLen - deselectLen), deselectAllButton);
+	mvwprintw(hist_win, 0, ((maxX/2) - clearLen), clearButton);
+	wattroff(res_win, A_BOLD | COLOR_PAIR(2));
+	wattroff(hist_win, A_BOLD | COLOR_PAIR(2));
+	
 	updateHist(inner_hist_win, "BatchDelete started successfully.\n", fdout);
 	
 	wnoutrefresh(header_win);
@@ -156,42 +206,65 @@ int main(int argc, char *argv[]) {
     doupdate();
 
     /* While user has not entered "q", continue running */
-    while(input[0] != 'q') {
-        if(mvgetstr(maxY - 2, 2, input) != ERR && inputHandler(input, 0)) {
-			winclear(inner_res_win);
-			search->query = strdup(input);
+    while(strcmp("q", input) != 0) {
+		winclear(inner_res_win, 0);
+        if(mvgetstr(maxY - 2, 2, input) != ERR) {
+			search->currSize = 0;
+			memdup(&prompt, "Type in a search query.", "prompt");
+			memdup(&search->query, input, "search->query");
 			fileSearch(search, path);
 			listResults(search, inner_res_win);
-			asprintf(&query, input);
-            asprintf(&status, "Found %d results searching '%s'\n", search->currSize, input);
+			memdup(&query, input, "query");
+			
+			if(status != NULL) {
+				free(status);
+				status = NULL;
+			}
+            if((asprintf(&status, "Found %d results searching '%s'\n", search->currSize, input)) == -1) {
+				printf("Memory allocation for status failed. Exiting...\n");
+				exit(-1);
+			}
+			else if(search->currSize > 0) {
+				memdup(&prompt, "Found files. Select which to delete.", "instruction");
+			}
+			printPrompt(query_win, prompt);
 			updateHist(inner_hist_win, status, fdout);
         } else {
-            sprintf(prompt, "Invalid input, try again.");
+            memdup(&prompt, "Invalid input, try again.", "instruction");
+			memdup(&status, "Invalid input, no results\n", "status");
             printPrompt(query_win, prompt);
         }
+		winclear(status_win, 1);
+		winclear(query_win, 1);
 		printStatus(status_win, query, path, status);
 		wnoutrefresh(status_win);
 		wnoutrefresh(query_win);
 		wnoutrefresh(inner_hist_win);
 		wnoutrefresh(inner_res_win);
-		winclear(status_win);
-		winclear(query_win);
         doupdate();
     }
 
 	/* User quit program */
 	updateHist(inner_hist_win, "User quit successfully.\n", fdout);
 	
-    /* Free all memory */
-	for(int i = 0; i < search->currSize; i++) {
+    /* Free all remaining memory */
+	for(int i = 0; i < search->initSize; i++) {
 		free(search->results[i]);
 	}
 	free(search->results);
-	free(search->path);
+	free(search->query);
+	free(search);
 	
 	free(status);
 	free(query);
 	free(path);
+	free(prompt);
+	
+	free(deleteButton);
+	free(cancelButton); 
+	free(clearButton);
+	free(selectAllButton);
+	free(deselectAllButton);
 	
     delwin(status_win);
     delwin(query_win);
@@ -227,32 +300,37 @@ void updateHist(WINDOW *hist, char *historyUpdate, int fd) {
 void listResults(struct searchStruct* search, WINDOW *res) {
 	for(int i = 0; i < search->currSize; i++) {
 		char *pathList;
-		asprintf(&pathList, "[ ] %s\n", search->results[i]);
-		scroll(res);
+		if((asprintf(&pathList, "[ ] %s", search->results[i])) == -1) {
+			perror("Memory allocation of listing results failed. Exiting...");
+			exit(-1);
+		}
 		mvwprintw(res, LINES - 12, 0, pathList);
+		scroll(res);
 		free(pathList);
 	}
 }
 
 void fileSearch(struct searchStruct* search, char *path) {
+	char *goPath;
 	DIR *sourcePath = opendir(path);
 	if(sourcePath == NULL) {
 		perror("Failed to open directory.");
 	}
 	char *wildQuery;
-	asprintf(&wildQuery, "*%s*", search->query);		/* Add wildcards on either end of query for matching */
+	if((asprintf(&wildQuery, "*%s*", search->query)) == -1) {
+		perror("Memory allocation of wildcard query failed. Exiting...");
+		exit(-1);
+	}
 	struct dirent *fileObj;
 	while((fileObj = readdir(sourcePath)) != NULL) {
-		int pathLen = strlen(path);
-		if(path[pathLen - 1] != '/') {			/* If there is no trailing slash at the end of path, add it. */
-			strcat(path, "/");
+		if(strcmp(fileObj->d_name, ".") == 0 || strcmp(fileObj->d_name, "..") == 0) {
+			continue;
 		}
-		char *goPath;
-		asprintf(&goPath, "%s%s", path, fileObj->d_name);
+		if((asprintf(&goPath, "%s%s/", path, fileObj->d_name)) == -1) {
+			perror("Memory allocation of next path failed. Exiting...");
+			exit(-1);
+		}
 		if(fileObj->d_type == DT_DIR) {
-			if(strcmp(fileObj->d_name, ".") == 0 || strcmp(fileObj->d_name, "..") == 0) {
-				continue;
-			} 
 			fileSearch(search, goPath);
 		}
 		else if(fnmatch(wildQuery, fileObj->d_name, FNM_CASEFOLD) == 0) {
@@ -261,19 +339,38 @@ void fileSearch(struct searchStruct* search, char *path) {
 				search->resultsExt = (char**)realloc(search->results, (sizeof(char*) * search->initSize));
 				if(search->resultsExt != NULL) {
 					search->results = search->resultsExt;
+					for(int i = search->initSize - 20; i < search->initSize; i++) {
+						search->results[i] = NULL;
+					}
 				}
 				else {
 					perror("Memory extension for char* array failed, exiting...");
 					exit(-1);
 				}
 			}
-			search->results[search->currSize] = strdup(goPath);
+			memdup(&(search->results[search->currSize]), goPath, "search->[results]");
 			search->currSize++;
 		}
 		free(goPath);
 	}
 	free(wildQuery);
 	closedir(sourcePath);
+}
+
+void memdup(char **target, char *text, char *type) {
+	if(*target != NULL) {
+		free(*target);
+		*target = NULL;
+	}
+	if((*target = strdup(text)) == NULL) {
+		printf("Memory allocation of %s failed, exiting...\n", type);
+		exit(-1);
+	}
+}
+
+int buttonPressed(int xpress, int ypress, int xbutton, int ybuttonmin, int ybuttonmax) {
+	int pressed = (xpress == xbutton && ypress >= ybuttonmin && ypress <= ybuttonmax) ? 1 : 0;
+	return pressed;
 }
 
 int validPath(const char *path) {
