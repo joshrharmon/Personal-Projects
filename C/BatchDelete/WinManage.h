@@ -10,10 +10,11 @@ WINDOW* initWin(int length, int width, int y, int x);
 
 /* Print utility functions */
 void printStatus(WINDOW *win, char *query, char *path, char *status);
-void printPrompt(WINDOW *win, char *prompt);
-void winclear(WINDOW *win);
+void printPrompt(WINDOW *win, char *instr);
+void winclear(WINDOW *win, int mode);
 
 /* Function to check for valid input */
 int inputHandler(const char *input, int type);
 
 #endif
+
