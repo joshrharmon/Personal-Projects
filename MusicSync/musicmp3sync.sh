@@ -2,6 +2,7 @@
 
 fileDelta=()
 fileRemoval=()
+fileCopy=()
 sourceDir=""
 targetDir=""
 FLAC_EXT_LEN=5
@@ -9,7 +10,7 @@ MP3_EXT_LEN=4
 
 # First arg is source, second is target
 CCOPY() {
-	if [[ $(cp "$1" "$2") -ne 0 ]]; then
+	if [[ $(cp -r "$1" "$2") -ne 0 ]]; then
 		echo ":: Copy of $1 -> $2 FAILED"
 	fi
 }
@@ -23,8 +24,17 @@ FFILE() {
 	fi
 }
 
+#First arg is file, second are args
+GGREP() {
+	if [[ -z $(grep $2 "$1") ]]; then
+		echo ":: Grep on $1 with "$2" FAILED"
+	else
+		echo $(grep $2 "$1")
+	fi
+}
+
 validDirs() {
-	if [[ -d "$sourceDir" ]] && [[ -d "$targetDir" ]] && [[ -r "$sourceDir" ]] && [[ -w "$targetDir" ]] && [[ "$sourceDir" != "$targetDir" ]]; then
+	if [[ -d "$sourceDir" && -d "$targetDir" && -r "$sourceDir" && -r "$targetDir" && -w "$sourceDir" && -w "$targetDir" && "$sourceDir" != "$targetDir" ]]; then
 		echo ":: Directories valid. Scanning..."
 		if [[ ${sourceDir:(-1)} == "/" ]]; then		# Remove trailing slash if present
 			sourceDir="${sourceDir::-1}"
@@ -47,6 +57,14 @@ deltaStats() {
 			echo -e "-> ${fileDelta[$i]##*/}"
 		done
 		echo ":: ${#fileDelta[@]} file(s) will be converted and transferred."
+	fi
+
+	if [[ ${#fileCopy[@]} -gt 0 ]]; then
+		echo "File(s) to copy over: "
+		for ((i = 0; i < ${#fileCopy[@]}; i++)); do
+			echo -e "-> ${fileCopy[$i]##*/}"
+		done
+		echo ":: ${#fileCopy[@]} file(s) will be transferred over."
 	fi
 	
 	if [[ ${#fileRemoval[@]} -gt 0 ]]; then
@@ -93,7 +111,7 @@ syncCommit() {
     	fi
     	
     	# Check if file is a FLAC or not. If not, simply copy it over.
-    	if [[ $(FFILE "${fileDelta[$j]}" "-t -V0") != "flac" ]]; then
+    	if [[ $(echo "${fileDelta[$j]}" | grep -o -E 'flac') != "flac" ]]; then
     		echo ":: Will copy over ${fileDelta[$j]##*/}"
     		CCOPY "${fileDelta[$j]}" "$existCheck"
     		continue
@@ -122,9 +140,16 @@ dirClone() {
                 the older copy.
                 '
 				fileLook="${targetDir}${file:sourceLen:-FLAC_EXT_LEN}.mp3"
-				if [[ ! -e $fileLook && $(FFILE "${file}" "-t -V0") == "flac" || ( -e $fileLook && ${file} -nt $fileLook ) ]]; then
-					fileDelta+=("${file}")
+				if [[ $(echo "${file}" | grep -o -E 'flac') == "flac" ]]; then
+					if [[ ! -e $fileLook || ${file} -nt $fileLook ]]; then
+						fileDelta+=("${file}")
+					fi
+				else
+					if [[ ! -e "${targetDir}${file:sourceLen}" ]]; then
+						fileDelta+=("${file}")
+					fi
 				fi
+
 			else
 				dirClone "${file}" "source"
 			fi
